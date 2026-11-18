@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tic-Tac-Toe</title>
+    <link rel="stylesheet" href="TTT.css">
+</head>
+<body>
+    <main class="container">
+        <h1>Tic-Tac-Toe</h1>
+        <div class="size-control">
+            <label for="board-size">Board size</label>
+            <select id="board-size" aria-describedby="size-help">
+                <option value="3" selected>3 × 3</option>
+                <option value="4">4 × 4</option>
+            </select>
+        </div>
+        <p id="size-help">Changing the size starts a new game.</p>
+        <div class="coin-stage">
+            <div class="coin" id="coin" aria-hidden="true">
+                <span class="face heads">H</span>
+                <span class="face tails">T</span>
+            </div>
+        </div>
+        <p id="matchup"></p>
+        <p id="status" aria-live="polite">Tossing a coin…</p>
+        <div class="game-board" role="group" aria-label="Tic-tac-toe board"></div>
+        <button id="reset" type="button">New game</button>
+    </main>
+    <script src="TTT.js"></script>
+</body>
+</html>
