@@ -55,7 +55,8 @@ function startGame() {
     if (cancelToss) {
         cancelToss();
     }
-    size = Number(sizeSelect.value) === 4 ? 4 : 3;
+    const selectedSize = Number(sizeSelect.value);
+    size = [3, 4, 5].includes(selectedSize) ? selectedSize : 3;
     board = Array(size * size).fill(null);
     winLines = makeWinLines(size);
     gameOver = false;
@@ -200,8 +201,8 @@ function minimax(player, depth, alpha, beta) {
     if (board.every(Boolean)) {
         return 0;
     }
-    // Search the entire 3×3 game tree; limit 4×4 to keep turns responsive.
-    if (size === 4 && depth >= 4) {
+    // Search all of 3×3; cap larger boards to keep turns responsive.
+    if ((size === 4 && depth >= 4) || (size === 5 && depth >= 3)) {
         return evaluateBoard();
     }
 
@@ -229,7 +230,7 @@ function minimax(player, depth, alpha, beta) {
 }
 
 function evaluateBoard() {
-    const weights = [0, 1, 6, 30, 0];
+    const weights = [0, 1, 6, 30, 150, 0];
     return winLines.reduce((score, line) => {
         let computer = 0;
         let human = 0;
