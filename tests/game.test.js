@@ -219,13 +219,23 @@ test('computer finds immediate wins and blocks immediate threats on every size',
 
 test('computer wins and blocks offset diagonal threats', () => {
     const game = setup();
-    for (const [n, marks, target, support] of [
-        [4, [7, 10], 13, [[11, 'X'], [14, 'O'], [15, 'X']]],
-        [5, [9, 13, 17], 21, [[14, 'X'], [18, 'O'], [19, 'X'], [22, 'X'], [23, 'O'], [24, 'X']]]
+    for (const [n, marks, target, winningSupport, blockingSupport] of [
+        [4, [7, 10], 13,
+         [[11, 'X'], [14, 'X'], [15, 'X']],
+         [[11, 'X'], [14, 'O'], [15, 'O']]],
+        [5, [9, 13, 17], 21,
+         [[14, 'X'], [18, 'O'], [19, 'X'], [22, 'X'], [23, 'X'], [24, 'X']],
+         [[14, 'X'], [18, 'X'], [19, 'O'], [22, 'O'], [23, 'O'], [24, 'O']]]
     ]) {
         game.run(`size = ${n}; winLines = makeWinLines(size); humanMark = 'X'; computerMark = 'O'`);
         for (const mark of ['O', 'X']) {
+            const support = mark === 'O' ? winningSupport : blockingSupport;
             game.run(`board = Array(size * size).fill(null); ${JSON.stringify(support)}.forEach(([i, m]) => board[i] = m); ${JSON.stringify(marks)}.forEach(i => board[i] = '${mark}')`);
+            assert.equal(game.run("findWinningLine('X')"), null, 'fixture already won by X');
+            assert.equal(game.run("findWinningLine('O')"), null, 'fixture already won by O');
+            assert.equal(game.run("board.filter(m => m === 'X').length - board.filter(m => m === 'O').length"), 1, 'fixture must have O to move');
+            assert.equal(game.run(`legalMoves().includes(${target})`), true, 'target must be legal');
+            assert.equal(game.run(`(() => { for (let col = 0; col < size; col++) { let empty = false; for (let row = size - 1; row >= 0; row--) { if (!board[row * size + col]) empty = true; else if (empty) return false; } } return true; })()`), true, 'fixture has floating marks');
             const before = game.run('JSON.stringify(board)');
             assert.equal(game.run('chooseComputerMove()'), target);
             assert.equal(game.run('JSON.stringify(board)'), before);
