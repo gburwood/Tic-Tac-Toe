@@ -92,13 +92,8 @@ h1 {
     animation: toss-tails 1.1s cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
 }
 
-.coin.show-heads {
-    transform: rotateY(0deg);
-}
-
-.coin.show-tails {
-    transform: rotateY(180deg);
-}
+.coin.show-heads { transform: rotateY(0deg); }
+.coin.show-tails { transform: rotateY(180deg); }
 
 @keyframes toss-heads {
     0% { transform: rotateY(0) translateY(0); }
@@ -131,9 +126,7 @@ h1 {
     color: #c5d0de;
 }
 
-#status {
-    font-size: 1.25rem;
-}
+#status { font-size: 1.25rem; }
 
 #reset {
     border: none;
@@ -146,9 +139,7 @@ h1 {
     cursor: pointer;
 }
 
-#reset:hover {
-    background: #5b92ff;
-}
+#reset:hover { background: #5b92ff; }
 
 #reset:focus-visible,
 #board-size:focus-visible,
@@ -185,27 +176,39 @@ h1 {
     cursor: pointer;
 }
 
-.cell:hover {
-    background: #2d3d56;
-}
-
-.cell:disabled {
-    cursor: default;
-}
-
-.cell:disabled:hover {
-    background: #243044;
-}
-
-.cell.x {
-    color: #7eb6ff;
-}
-
-.cell.o {
-    color: #f2b56b;
-}
-
+.cell:hover { background: #2d3d56; }
+.cell:disabled { cursor: default; }
+.cell:disabled:hover { background: #243044; }
+.cell.x { color: #7eb6ff; }
+.cell.o { color: #f2b56b; }
 .cell.win,
-.cell.win:disabled:hover {
-    background: #355a3a;
+.cell.win:disabled:hover { background: #355a3a; }
+
+.falling-mark {
+    z-index: 1;
+    display: grid;
+    place-items: center;
+    min-width: 0;
+    pointer-events: none;
+    font: inherit;
+    font-size: clamp(1.5rem, 10vw, 3.5rem);
+    font-weight: 700;
+    line-height: 1;
+    animation: drop-mark 550ms linear both;
+}
+
+.falling-mark.x { color: #7eb6ff; }
+.falling-mark.o { color: #f2b56b; }
+
+@keyframes drop-mark {
+    0% { transform: translateY(calc(-1 * var(--drop-distance))); animation-timing-function: cubic-bezier(0.5, 0, 1, 1); }
+    65% { transform: translateY(0); animation-timing-function: ease-out; }
+    78% { transform: translateY(-14px); animation-timing-function: ease-in; }
+    89% { transform: translateY(0); animation-timing-function: ease-out; }
+    95% { transform: translateY(-4px); animation-timing-function: ease-in; }
+    100% { transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .falling-mark { animation: none; }
 }

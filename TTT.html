@@ -17,7 +17,7 @@
                 <option value="5">5 × 5</option>
             </select>
         </div>
-        <p id="size-help">Changing the size starts a new game.</p>
+        <p id="size-help">Changing the size starts a new game. On 4 × 4 and 5 × 5, select any cell in a column to drop a mark to its lowest empty row. Full columns are unavailable. Win with 3 in a row on 3 × 3 or 4 × 4, or 4 in a row on 5 × 5, horizontally, vertically or diagonally.</p>
         <div class="coin-stage">
             <div class="coin" id="coin" aria-hidden="true">
                 <span class="face heads">H</span>
@@ -26,7 +26,7 @@
         </div>
         <p id="matchup"></p>
         <p id="status" aria-live="polite">Tossing a coin…</p>
-        <div class="game-board" role="group" aria-label="Tic-tac-toe board"></div>
+        <div class="game-board" role="group" aria-label="Tic-tac-toe board" aria-describedby="size-help"></div>
         <button id="reset" type="button">New game</button>
     </main>
     <script src="TTT.js"></script>

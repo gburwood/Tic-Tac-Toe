@@ -86,11 +86,11 @@ test('selection, reset, labels and stale computer turns work across sizes', asyn
     assert.equal(board.children.length, 25);
     assert.equal(board.styles['--board-size'], 5);
     assert.equal(board.attributes['aria-label'], '5 by 5 tic-tac-toe board');
-    assert.equal(board.children[24].attributes['aria-label'], 'Row 5, column 5, empty');
+    assert.equal(board.children[24].attributes['aria-label'], 'Row 5, column 5, empty; drop in column 5, lands in row 5');
     await settle();
     assert.equal(game.elements['#status'].textContent, 'Your turn');
     board.children[0].dispatch('click');
-    assert.equal(board.children[0].attributes['aria-label'], 'Row 1, column 1, X');
+    assert.equal(board.children[20].attributes['aria-label'], 'Row 5, column 1, X; drop in column 1, lands in row 4');
     assert.ok(board.children.every((cell) => cell.disabled));
     game.elements['#reset'].dispatch('click');
     assert.equal(board.children.length, 25);
@@ -119,34 +119,74 @@ test('stale toss completions cannot alter a newly selected game', async () => {
     assert.ok(game.elements['.game-board'].children.every((cell) => !cell.disabled));
 });
 
-test('all complete rows, columns and diagonals win at each size', () => {
+test('all complete rows, columns and diagonals contain a win at each size', () => {
     const game = setup();
     for (const n of [3, 4, 5]) {
+        const length = n === 5 ? 4 : 3;
         game.run(`size = ${n}; board = Array(size * size).fill(null); winLines = makeWinLines(size)`);
-        const lines = game.run('winLines.map(line => [...line])');
-        assert.equal(lines.length, 2 * n + 2);
-        for (const line of lines) {
+        const fullLines = [];
+        for (let i = 0; i < n; i++) {
+            fullLines.push(Array.from({ length: n }, (_, j) => i * n + j));
+            fullLines.push(Array.from({ length: n }, (_, j) => j * n + i));
+        }
+        fullLines.push(Array.from({ length: n }, (_, i) => i * n + i));
+        fullLines.push(Array.from({ length: n }, (_, i) => i * n + n - 1 - i));
+        for (const line of fullLines) {
             game.run(`board = Array(size * size).fill(null); ${JSON.stringify(line)}.forEach(i => board[i] = 'X')`);
             assert.ok(game.run("findWinningLine('X')"));
-            game.run(`board[${line[0]}] = null`);
+            game.run(`board = Array(size * size).fill(null); ${JSON.stringify(line.slice(0, length - 1))}.forEach(i => board[i] = 'X')`);
             assert.equal(game.run("findWinningLine('X')"), null);
         }
     }
 });
 
-test('five marks finish a 5×5 game, highlight the line and lock the board', async () => {
+test('every valid consecutive segment wins, without wrapping or gaps', () => {
     const game = setup();
-    game.elements['#board-size'].value = '5';
-    game.elements['#board-size'].dispatch('change');
-    await settle();
-    for (let i = 0; i < 4; i++) {
-        assert.equal(game.run(`placeMark(${i}, 'X')`), true);
+    for (const n of [3, 4, 5]) {
+        const length = n === 5 ? 4 : 3;
+        game.run(`size = ${n}; winLines = makeWinLines(size); board = Array(size * size).fill(null)`);
+        const expected = [];
+        for (let row = 0; row < n; row++) {
+            for (let col = 0; col < n; col++) {
+                for (const [dr, dc] of [[0, 1], [1, 0], [1, 1], [1, -1]]) {
+                    const coords = Array.from({ length }, (_, i) => [row + i * dr, col + i * dc]);
+                    if (coords.every(([r, c]) => r >= 0 && r < n && c >= 0 && c < n)) {
+                        expected.push(coords.map(([r, c]) => r * n + c));
+                    }
+                }
+            }
+        }
+        const actual = JSON.parse(game.run('JSON.stringify(winLines)'));
+        assert.deepEqual(actual.map(String).sort(), expected.map(String).sort());
+        assert.equal(new Set(actual.map(String)).size, expected.length);
+        for (const line of expected) {
+            for (const mark of ['X', 'O']) {
+                game.run(`board = Array(size * size).fill(null); ${JSON.stringify(line)}.forEach(i => board[i] = '${mark}')`);
+                assert.ok(game.run(`findWinningLine('${mark}')`));
+                game.run(`board[${line[Math.floor(length / 2)]}] = null`);
+                assert.equal(game.run(`findWinningLine('${mark}')`), null);
+            }
+        }
+        game.run(`board = Array(size * size).fill(null); board[${n - 1}] = 'X'; board[${n}] = 'X'; board[${n + 1}] = 'X'`);
+        assert.equal(game.run("findWinningLine('X')"), null);
     }
-    assert.equal(game.run("placeMark(4, 'X')"), false);
-    const cells = game.elements['.game-board'].children;
-    assert.equal(game.elements['#status'].textContent, 'You win');
-    assert.ok(cells.slice(0, 5).every((cell) => cell.classList.contains('win')));
-    assert.ok(cells.every((cell) => cell.disabled));
+});
+
+test('shorter offset lines finish games, highlight the line and lock the board', async () => {
+    const game = setup();
+    for (const [n, line] of [[4, [7, 10, 13]], [5, [9, 13, 17, 21]]]) {
+        game.elements['#board-size'].value = String(n);
+        game.elements['#board-size'].dispatch('change');
+        await settle();
+        for (const index of line.slice(0, -1)) {
+            assert.equal(game.run(`placeMark(${index}, 'X')`), true);
+        }
+        assert.equal(game.run(`placeMark(${line.at(-1)}, 'X')`), false);
+        const cells = game.elements['.game-board'].children;
+        assert.equal(game.elements['#status'].textContent, 'You win');
+        assert.deepEqual(cells.map((cell, i) => cell.classList.contains('win') ? i : null).filter((i) => i !== null), [...line].sort((a, b) => a - b));
+        assert.ok(cells.every((cell) => cell.disabled));
+    }
 });
 
 test('a full 5×5 board without a winning line is a draw', async () => {
@@ -154,8 +194,7 @@ test('a full 5×5 board without a winning line is a draw', async () => {
     game.elements['#board-size'].value = '5';
     game.elements['#board-size'].dispatch('change');
     await settle();
-    // Both main diagonals and every row and column contain both marks.
-    const marks = ['XOXOX', 'OXOXO', 'XOXOX', 'OXOXO', 'OXOXO'].join('').split('');
+    const marks = ['XXOOX', 'OOXXO', 'XXOOX', 'OOXXO', 'XXOOX'].join('').split('');
     game.run(`board = ${JSON.stringify(marks)}; board[24] = null`);
     assert.equal(game.run("findWinningLine('X')"), null);
     assert.equal(game.run("findWinningLine('O')"), null);
@@ -167,12 +206,30 @@ test('a full 5×5 board without a winning line is a draw', async () => {
 test('computer finds immediate wins and blocks immediate threats on every size', () => {
     const game = setup();
     for (const n of [3, 4, 5]) {
+        const length = n === 5 ? 4 : 3;
+        const start = n === 3 ? 0 : (n - 1) * n;
         game.run(`size = ${n}; winLines = makeWinLines(size); humanMark = 'X'; computerMark = 'O'; board = Array(size * size).fill(null)`);
-        game.run(`for (let i = 0; i < ${n - 1}; i++) board[i] = 'O'`);
-        assert.equal(game.run('chooseComputerMove()'), n - 1);
-        game.run(`board = Array(size * size).fill(null); for (let i = 0; i < ${n - 1}; i++) board[i] = 'X'`);
-        assert.equal(game.run('chooseComputerMove()'), n - 1);
-        assert.equal(game.run('board.filter(Boolean).length'), n - 1);
+        game.run(`for (let i = 0; i < ${length - 1}; i++) board[${start} + i] = 'O'`);
+        assert.equal(game.run('chooseComputerMove()'), start + length - 1);
+        game.run(`board = Array(size * size).fill(null); for (let i = 0; i < ${length - 1}; i++) board[${start} + i] = 'X'`);
+        assert.equal(game.run('chooseComputerMove()'), start + length - 1);
+        assert.equal(game.run('board.filter(Boolean).length'), length - 1);
+    }
+});
+
+test('computer wins and blocks offset diagonal threats', () => {
+    const game = setup();
+    for (const [n, marks, target, support] of [
+        [4, [7, 10], 13, [[11, 'X'], [14, 'O'], [15, 'X']]],
+        [5, [9, 13, 17], 21, [[14, 'X'], [18, 'O'], [19, 'X'], [22, 'X'], [23, 'O'], [24, 'X']]]
+    ]) {
+        game.run(`size = ${n}; winLines = makeWinLines(size); humanMark = 'X'; computerMark = 'O'`);
+        for (const mark of ['O', 'X']) {
+            game.run(`board = Array(size * size).fill(null); ${JSON.stringify(support)}.forEach(([i, m]) => board[i] = m); ${JSON.stringify(marks)}.forEach(i => board[i] = '${mark}')`);
+            const before = game.run('JSON.stringify(board)');
+            assert.equal(game.run('chooseComputerMove()'), target);
+            assert.equal(game.run('JSON.stringify(board)'), before);
+        }
     }
 });
 

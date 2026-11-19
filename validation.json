@@ -1,0 +1,5 @@
+{
+  "kind": "automated",
+  "criteria": "Existing regression tests and gravity tests pass: 4×4 and 5×5 clicks and computer search use the lowest available cell in the selected column, full columns are unavailable, wins and resets work, and 3×3 behavior is unchanged.",
+  "commands": [["node", "--test", "tests/game.test.js", "tests/gravity.test.js"]]
+}

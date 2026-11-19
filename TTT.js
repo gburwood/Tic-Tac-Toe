@@ -15,20 +15,65 @@ let currentPlayer = "X";
 let gameOver = false;
 let turnToken = 0;
 let cancelToss = null;
+let cancelDrop = null;
+let dropping = false;
 
 resetButton.addEventListener("click", startGame);
 sizeSelect.addEventListener("change", startGame);
 startGame();
 
 function makeWinLines(n) {
+    const length = n === 5 ? 4 : 3;
+    const directions = [[0, 1], [1, 0], [1, 1], [1, -1]];
     const lines = [];
-    for (let i = 0; i < n; i++) {
-        lines.push(Array.from({ length: n }, (_, j) => i * n + j));
-        lines.push(Array.from({ length: n }, (_, j) => j * n + i));
+    for (let row = 0; row < n; row++) {
+        for (let column = 0; column < n; column++) {
+            for (const [dr, dc] of directions) {
+                const endRow = row + (length - 1) * dr;
+                const endColumn = column + (length - 1) * dc;
+                if (endRow < 0 || endRow >= n || endColumn < 0 || endColumn >= n) {
+                    continue;
+                }
+                lines.push(Array.from({ length }, (_, i) => (row + i * dr) * n + column + i * dc));
+            }
+        }
     }
-    lines.push(Array.from({ length: n }, (_, i) => i * n + i));
-    lines.push(Array.from({ length: n }, (_, i) => i * n + (n - 1 - i)));
     return lines;
+}
+
+// Return the landing cell for a click, or null when that move is unavailable.
+function landingCell(index) {
+    if (!Number.isInteger(index) || index < 0 || index >= board.length) return null;
+    if (size === 3) return board[index] ? null : index;
+    const column = index % size;
+    for (let row = size - 1; row >= 0; row--) {
+        const candidate = row * size + column;
+        if (!board[candidate]) return candidate;
+    }
+    return null;
+}
+
+// One landing cell per column on gravity boards, every empty cell on 3×3.
+function legalMoves() {
+    if (size === 3) {
+        return board.flatMap((mark, index) => mark ? [] : [index]);
+    }
+    return Array.from({ length: size }, (_, column) => landingCell(column))
+        .filter((index) => index !== null);
+}
+
+function updateCellLabel(index) {
+    const cell = cells[index];
+    const content = board[index] || "empty";
+    if (size === 3) {
+        cell.setAttribute("aria-label", `${cell.dataset.label}, ${content}`);
+        return;
+    }
+    const landing = landingCell(index);
+    const action = landing === null
+        ? "column full"
+        : `drop in column ${index % size + 1}, lands in row ${Math.floor(landing / size) + 1}`;
+    cell.setAttribute("aria-label", `${cell.dataset.label}, ${content}; ${action}`);
 }
 
 function buildBoard() {
@@ -42,19 +87,18 @@ function buildBoard() {
         cell.type = "button";
         cell.className = "cell";
         cell.dataset.label = `Row ${row}, column ${column}`;
-        cell.setAttribute("aria-label", `${cell.dataset.label}, empty`);
         cell.disabled = true;
         cell.addEventListener("click", () => playHumanMove(index));
         boardEl.appendChild(cell);
         return cell;
     });
+    cells.forEach((_, index) => updateCellLabel(index));
 }
 
 function startGame() {
     const token = ++turnToken;
-    if (cancelToss) {
-        cancelToss();
-    }
+    if (cancelToss) cancelToss();
+    if (cancelDrop) cancelDrop();
     const selectedSize = Number(sizeSelect.value);
     size = [3, 4, 5].includes(selectedSize) ? selectedSize : 3;
     board = Array(size * size).fill(null);
@@ -66,9 +110,7 @@ function startGame() {
 
     const side = Math.random() < 0.5 ? "heads" : "tails";
     playToss(side).then(() => {
-        if (token !== turnToken) {
-            return;
-        }
+        if (token !== turnToken) return;
         humanMark = side === "heads" ? "X" : "O";
         computerMark = humanMark === "X" ? "O" : "X";
         currentPlayer = "X";
@@ -102,9 +144,7 @@ function playToss(side) {
             resolve();
         };
         const onEnd = (event) => {
-            if (event.target === coin) {
-                finish();
-            }
+            if (event.target === coin) finish();
         };
         cancelToss = finish;
         coin.addEventListener("animationend", onEnd);
@@ -119,30 +159,76 @@ function playToss(side) {
 }
 
 function playHumanMove(index) {
-    if (gameOver || currentPlayer !== humanMark || board[index]) {
-        return;
-    }
+    if (gameOver || dropping || currentPlayer !== humanMark) return;
+    const landing = landingCell(index);
+    if (landing === null) return;
     const token = turnToken;
-    if (!placeMark(index, humanMark)) {
-        return;
-    }
-    currentPlayer = computerMark;
-    statusEl.textContent = "Computer's turn";
-    lockBoard();
-    window.setTimeout(() => computerTurn(token), 450);
+    makeMove(landing, humanMark, token, () => {
+        currentPlayer = computerMark;
+        statusEl.textContent = "Computer's turn";
+        lockBoard();
+        window.setTimeout(() => computerTurn(token), 450);
+    });
 }
 
 function computerTurn(token) {
-    if (token !== turnToken || gameOver || currentPlayer !== computerMark) {
-        return;
-    }
+    if (token !== turnToken || gameOver || dropping || currentPlayer !== computerMark) return;
     const index = chooseComputerMove();
-    if (!placeMark(index, computerMark)) {
+    if (index === undefined) return;
+    makeMove(index, computerMark, token, () => {
+        currentPlayer = humanMark;
+        statusEl.textContent = "Your turn";
+        unlockEmptyCells();
+    });
+}
+
+// Keep the real board unchanged until the visual mark settles.
+function makeMove(index, mark, token, afterLanding) {
+    if (size === 3 || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        if (placeMark(index, mark)) afterLanding();
         return;
     }
-    currentPlayer = humanMark;
-    statusEl.textContent = "Your turn";
-    unlockEmptyCells();
+    dropping = true;
+    lockBoard();
+    statusEl.textContent = mark === humanMark ? "Your mark is falling…" : "Computer's mark is falling…";
+
+    // Anchor the overlay to the target grid cell so resizing keeps it aligned.
+    const visual = document.createElement("span");
+    visual.className = `falling-mark ${mark.toLowerCase()}`;
+    visual.setAttribute("aria-hidden", "true");
+    visual.textContent = mark;
+    visual.style.gridColumn = String(index % size + 1);
+    visual.style.gridRow = String(Math.floor(index / size) + 1);
+    const targetRect = cells[index].getBoundingClientRect();
+    const topRect = cells[index % size].getBoundingClientRect();
+    visual.style.setProperty("--drop-distance", `${targetRect.top - topRect.top + topRect.height}px`);
+    boardEl.appendChild(visual);
+
+    let finished = false;
+    let timer;
+    const cleanup = () => {
+        if (finished) return false;
+        finished = true;
+        window.clearTimeout(timer);
+        visual.removeEventListener("animationend", onAnimation);
+        visual.removeEventListener("animationcancel", onAnimation);
+        visual.remove();
+        cancelDrop = null;
+        dropping = false;
+        return true;
+    };
+    const finish = () => {
+        if (!cleanup() || token !== turnToken) return;
+        if (placeMark(index, mark)) afterLanding();
+    };
+    const onAnimation = (event) => {
+        if (event.target === visual && event.animationName === "drop-mark") finish();
+    };
+    cancelDrop = cleanup;
+    visual.addEventListener("animationend", onAnimation);
+    visual.addEventListener("animationcancel", onAnimation);
+    // Recover when animations or animation events are unavailable.
+    timer = window.setTimeout(finish, 800);
 }
 
 function placeMark(index, mark) {
@@ -150,8 +236,7 @@ function placeMark(index, mark) {
     const cell = cells[index];
     cell.textContent = mark;
     cell.classList.add(mark.toLowerCase());
-    cell.disabled = true;
-    cell.setAttribute("aria-label", `${cell.dataset.label}, ${mark}`);
+    cells.forEach((_, i) => updateCellLabel(i));
 
     const line = findWinningLine(mark);
     if (line) {
@@ -173,10 +258,7 @@ function placeMark(index, mark) {
 function chooseComputerMove() {
     let bestScore = -Infinity;
     const choices = [];
-    for (let index = 0; index < board.length; index++) {
-        if (board[index]) {
-            continue;
-        }
+    for (const index of legalMoves()) {
         board[index] = computerMark;
         const score = minimax(humanMark, 1, -Infinity, Infinity);
         board[index] = null;
@@ -192,15 +274,9 @@ function chooseComputerMove() {
 }
 
 function minimax(player, depth, alpha, beta) {
-    if (findWinningLine(computerMark)) {
-        return 10000 - depth;
-    }
-    if (findWinningLine(humanMark)) {
-        return depth - 10000;
-    }
-    if (board.every(Boolean)) {
-        return 0;
-    }
+    if (findWinningLine(computerMark)) return 10000 - depth;
+    if (findWinningLine(humanMark)) return depth - 10000;
+    if (board.every(Boolean)) return 0;
     // Search all of 3×3; cap larger boards to keep turns responsive.
     if ((size === 4 && depth >= 4) || (size === 5 && depth >= 3)) {
         return evaluateBoard();
@@ -208,10 +284,7 @@ function minimax(player, depth, alpha, beta) {
 
     const maximizing = player === computerMark;
     let best = maximizing ? -Infinity : Infinity;
-    for (let index = 0; index < board.length; index++) {
-        if (board[index]) {
-            continue;
-        }
+    for (const index of legalMoves()) {
         board[index] = player;
         const score = minimax(opponent(player), depth + 1, alpha, beta);
         board[index] = null;
@@ -222,9 +295,7 @@ function minimax(player, depth, alpha, beta) {
             best = Math.min(best, score);
             beta = Math.min(beta, best);
         }
-        if (beta <= alpha) {
-            break;
-        }
+        if (beta <= alpha) break;
     }
     return best;
 }
@@ -259,6 +330,6 @@ function lockBoard() {
 
 function unlockEmptyCells() {
     cells.forEach((cell, index) => {
-        cell.disabled = Boolean(board[index]);
+        cell.disabled = landingCell(index) === null;
     });
 }
